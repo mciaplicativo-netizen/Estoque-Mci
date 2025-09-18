@@ -29,7 +29,7 @@ def importar_excel(file):
     conn.commit()
     conn.close()
 
-def consultar_estoque(local=None):
+def estoque_por_local(local=None):
     conn = get_connection()
     query = """
     SELECT p.id, p.descricao, p.unidade, p.local,
@@ -42,7 +42,22 @@ def consultar_estoque(local=None):
     query += " ORDER BY p.local, p.descricao"
     df = pd.read_sql(query, conn)
     conn.close()
-    df = df[df["saldo"] > 0]  # Mostrar apenas produtos com saldo > 0
+    df = df[df["saldo"] > 0]
+    return df
+
+def resumo_geral():
+    conn = get_connection()
+    query = """
+    SELECT p.descricao, p.unidade,
+           SUM(IFNULL((SELECT SUM(e.quantidade) FROM entradas e WHERE e.produto_id = p.id), 0) -
+               IFNULL((SELECT SUM(s.quantidade) FROM saidas s WHERE s.produto_id = p.id), 0)) AS saldo_total
+    FROM produtos p
+    GROUP BY p.descricao, p.unidade
+    HAVING saldo_total > 0
+    ORDER BY p.descricao
+    """
+    df = pd.read_sql(query, conn)
+    conn.close()
     return df
 
 def listar_produtos_por_local(local):
@@ -52,10 +67,10 @@ def listar_produtos_por_local(local):
     conn.close()
     return df
 
-def exportar_excel(df):
+def exportar_excel(df, sheet_name="Estoque"):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Estoque Atual")
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
     return output.getvalue()
 
 def lancar_entrada(produto_id, quantidade, fornecedor=None, observacao=""):
@@ -134,25 +149,38 @@ def historico_produto(produto_id):
 st.set_page_config(page_title="Gestão de Estoque MCI", layout="wide")
 st.title("📦 Gestão de Estoque MCI")
 
-menu = st.sidebar.radio("Menu", ["Consultar Estoque", "Lançar Entrada", "Lançar Saída", "Relatórios", "Importar Dados do Excel"])
+menu = st.sidebar.radio("Menu", ["Estoque Geral", "Lançar Entrada", "Lançar Saída", "Relatórios", "Importar Dados do Excel"])
 
-if menu == "Consultar Estoque":
-    st.subheader("📊 Estoque Atual")
+if menu == "Estoque Geral":
+    st.subheader("📍 Estoque por Local")
     locais = pd.read_sql("SELECT DISTINCT local FROM produtos WHERE local IS NOT NULL", get_connection())["local"].tolist()
     local_sel = st.selectbox("Filtrar por Local", ["Todos"] + locais)
     if local_sel != "Todos":
-        df = consultar_estoque(local_sel)
+        df = estoque_por_local(local_sel)
     else:
-        df = consultar_estoque()
-    df = df[["local", "descricao", "saldo", "unidade"]]
-    st.dataframe(df)
+        df = estoque_por_local()
+    df_local = df[["local", "descricao", "saldo", "unidade"]]
+    st.dataframe(df_local)
 
-    if not df.empty:
-        excel_bytes = exportar_excel(df)
+    if not df_local.empty:
+        excel_bytes = exportar_excel(df_local, sheet_name="Estoque por Local")
         st.download_button(
-            label="📥 Exportar para Excel",
+            label="📥 Exportar Estoque por Local",
             data=excel_bytes,
-            file_name="estoque_atual.xlsx",
+            file_name="estoque_por_local.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    st.subheader("📊 Resumo Consolidado Geral")
+    df_resumo = resumo_geral()
+    st.dataframe(df_resumo)
+
+    if not df_resumo.empty:
+        excel_bytes2 = exportar_excel(df_resumo, sheet_name="Resumo Geral")
+        st.download_button(
+            label="📥 Exportar Resumo Geral",
+            data=excel_bytes2,
+            file_name="resumo_geral.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
