@@ -42,8 +42,28 @@ def consultar_estoque(local=None):
     query += " ORDER BY p.descricao"
     df = pd.read_sql(query, conn)
     conn.close()
-    # Mostrar apenas produtos com saldo > 0
-    df = df[df["saldo"] > 0]
+    df = df[df["saldo"] > 0]  # Mostrar apenas produtos com saldo > 0
+    return df
+
+def resumo_por_local():
+    conn = get_connection()
+    query = """
+    SELECT p.local,
+           SUM(IFNULL((SELECT SUM(e.quantidade) FROM entradas e WHERE e.produto_id = p.id), 0) -
+               IFNULL((SELECT SUM(s.quantidade) FROM saidas s WHERE s.produto_id = p.id), 0)) AS saldo_total
+    FROM produtos p
+    GROUP BY p.local
+    ORDER BY p.local
+    """
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
+
+def listar_produtos_por_local(local):
+    conn = get_connection()
+    query = "SELECT id, descricao, unidade FROM produtos WHERE local = ? ORDER BY descricao"
+    df = pd.read_sql(query, conn, params=[local])
+    conn.close()
     return df
 
 def exportar_excel(df):
@@ -133,7 +153,7 @@ menu = st.sidebar.radio("Menu", ["Consultar Estoque", "Lançar Entrada", "Lança
 if menu == "Consultar Estoque":
     st.subheader("📊 Estoque Atual")
     df = consultar_estoque()
-    locais = df["local"].dropna().unique().tolist()
+    locais = pd.read_sql("SELECT DISTINCT local FROM produtos WHERE local IS NOT NULL", get_connection())["local"].tolist()
     local_sel = st.selectbox("Filtrar por Local", ["Todos"] + locais)
     if local_sel != "Todos":
         df = consultar_estoque(local_sel)
@@ -149,13 +169,16 @@ if menu == "Consultar Estoque":
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
+    st.markdown("### 📍 Resumo por Local")
+    df_resumo = resumo_por_local()
+    st.dataframe(df_resumo)
+
 elif menu == "Lançar Entrada":
     st.subheader("➕ Nova Entrada")
-    df_full = consultar_estoque()  # todos os produtos
-    locais = df_full["local"].dropna().unique().tolist()
+    locais = pd.read_sql("SELECT DISTINCT local FROM produtos WHERE local IS NOT NULL", get_connection())["local"].tolist()
     local_sel = st.selectbox("Local", locais, index=0 if locais else None)
     if local_sel:
-        df = df_full[df_full["local"] == local_sel]
+        df = listar_produtos_por_local(local_sel)
         produto = st.selectbox("Produto", df["descricao"], index=None)
         if produto:
             produto_id = df.loc[df["descricao"] == produto, "id"].values[0]
@@ -168,11 +191,10 @@ elif menu == "Lançar Entrada":
 
 elif menu == "Lançar Saída":
     st.subheader("➖ Nova Saída")
-    df_full = consultar_estoque()  # todos os produtos
-    locais = df_full["local"].dropna().unique().tolist()
+    locais = pd.read_sql("SELECT DISTINCT local FROM produtos WHERE local IS NOT NULL", get_connection())["local"].tolist()
     local_sel = st.selectbox("Local", locais, index=0 if locais else None)
     if local_sel:
-        df = df_full[df_full["local"] == local_sel]
+        df = listar_produtos_por_local(local_sel)
         produto = st.selectbox("Produto", df["descricao"], index=None)
         if produto:
             produto_id = df.loc[df["descricao"] == produto, "id"].values[0]
@@ -201,9 +223,10 @@ elif menu == "Relatórios":
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("### 📈 Evolução de Estoque de um Produto")
-    produto_sel = st.selectbox("Selecione o produto", df["descricao"], index=None)
+    df_all = pd.read_sql("SELECT id, descricao FROM produtos ORDER BY descricao", get_connection())
+    produto_sel = st.selectbox("Selecione o produto", df_all["descricao"], index=None)
     if produto_sel:
-        produto_id = df.loc[df["descricao"] == produto_sel, "id"].values[0]
+        produto_id = df_all.loc[df_all["descricao"] == produto_sel, "id"].values[0]
         hist = historico_produto(produto_id)
         if hist.empty:
             st.info("Ainda não há movimentações para este produto.")
