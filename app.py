@@ -39,24 +39,10 @@ def consultar_estoque(local=None):
     """
     if local:
         query += f" WHERE p.local = '{local}'"
-    query += " ORDER BY p.descricao"
+    query += " ORDER BY p.local, p.descricao"
     df = pd.read_sql(query, conn)
     conn.close()
     df = df[df["saldo"] > 0]  # Mostrar apenas produtos com saldo > 0
-    return df
-
-def resumo_por_local():
-    conn = get_connection()
-    query = """
-    SELECT p.local,
-           SUM(IFNULL((SELECT SUM(e.quantidade) FROM entradas e WHERE e.produto_id = p.id), 0) -
-               IFNULL((SELECT SUM(s.quantidade) FROM saidas s WHERE s.produto_id = p.id), 0)) AS saldo_total
-    FROM produtos p
-    GROUP BY p.local
-    ORDER BY p.local
-    """
-    df = pd.read_sql(query, conn)
-    conn.close()
     return df
 
 def listar_produtos_por_local(local):
@@ -152,12 +138,13 @@ menu = st.sidebar.radio("Menu", ["Consultar Estoque", "Lançar Entrada", "Lança
 
 if menu == "Consultar Estoque":
     st.subheader("📊 Estoque Atual")
-    df = consultar_estoque()
     locais = pd.read_sql("SELECT DISTINCT local FROM produtos WHERE local IS NOT NULL", get_connection())["local"].tolist()
     local_sel = st.selectbox("Filtrar por Local", ["Todos"] + locais)
     if local_sel != "Todos":
         df = consultar_estoque(local_sel)
-    df = df[["descricao", "saldo", "unidade"]]
+    else:
+        df = consultar_estoque()
+    df = df[["local", "descricao", "saldo", "unidade"]]
     st.dataframe(df)
 
     if not df.empty:
@@ -168,10 +155,6 @@ if menu == "Consultar Estoque":
             file_name="estoque_atual.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
-    st.markdown("### 📍 Resumo por Local")
-    df_resumo = resumo_por_local()
-    st.dataframe(df_resumo)
 
 elif menu == "Lançar Entrada":
     st.subheader("➕ Nova Entrada")
