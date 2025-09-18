@@ -33,13 +33,14 @@ def estoque_por_local(local=None):
     conn = get_connection()
     query = """
     SELECT p.id, p.descricao, p.unidade, p.local,
-           IFNULL((SELECT SUM(quantidade) FROM entradas e WHERE e.produto_id = p.id), 0) -
-           IFNULL((SELECT SUM(quantidade) FROM saidas s WHERE s.produto_id = p.id), 0) AS saldo
+           IFNULL(SUM(e.quantidade), 0) - IFNULL(SUM(s.quantidade), 0) AS saldo
     FROM produtos p
+    LEFT JOIN entradas e ON e.produto_id = p.id
+    LEFT JOIN saidas s ON s.produto_id = p.id
     """
     if local:
         query += f" WHERE p.local = '{local}'"
-    query += " ORDER BY p.local, p.descricao"
+    query += " GROUP BY p.id, p.descricao, p.unidade, p.local ORDER BY p.local, p.descricao"
     df = pd.read_sql(query, conn)
     conn.close()
     df = df[df["saldo"] > 0]
@@ -49,9 +50,10 @@ def resumo_geral():
     conn = get_connection()
     query = """
     SELECT p.descricao, p.unidade,
-           SUM(IFNULL((SELECT SUM(e.quantidade) FROM entradas e WHERE e.produto_id = p.id), 0) -
-               IFNULL((SELECT SUM(s.quantidade) FROM saidas s WHERE s.produto_id = p.id), 0)) AS saldo_total
+           IFNULL(SUM(e.quantidade), 0) - IFNULL(SUM(s.quantidade), 0) AS saldo_total
     FROM produtos p
+    LEFT JOIN entradas e ON e.produto_id = p.id
+    LEFT JOIN saidas s ON s.produto_id = p.id
     GROUP BY p.descricao, p.unidade
     HAVING saldo_total > 0
     ORDER BY p.descricao
