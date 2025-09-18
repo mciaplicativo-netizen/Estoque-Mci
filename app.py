@@ -42,6 +42,8 @@ def consultar_estoque(local=None):
     query += " ORDER BY p.descricao"
     df = pd.read_sql(query, conn)
     conn.close()
+    # Mostrar apenas produtos com saldo > 0
+    df = df[df["saldo"] > 0]
     return df
 
 def exportar_excel(df):
@@ -149,29 +151,37 @@ if menu == "Consultar Estoque":
 
 elif menu == "Lançar Entrada":
     st.subheader("➕ Nova Entrada")
-    df = consultar_estoque()
-    produto = st.selectbox("Produto", df["descricao"], index=None)
-    if produto:
-        produto_id = df.loc[df["descricao"] == produto, "id"].values[0]
-        quantidade = st.number_input("Quantidade", min_value=1.0, step=1.0)
-        fornecedor = st.text_input("Fornecedor (opcional)")
-        observacao = st.text_input("Observação")
-        if st.button("Salvar Entrada"):
-            lancar_entrada(produto_id, quantidade, fornecedor=fornecedor, observacao=observacao)
-            st.success("Entrada lançada com sucesso!")
+    df_full = consultar_estoque()  # todos os produtos
+    locais = df_full["local"].dropna().unique().tolist()
+    local_sel = st.selectbox("Local", locais, index=0 if locais else None)
+    if local_sel:
+        df = df_full[df_full["local"] == local_sel]
+        produto = st.selectbox("Produto", df["descricao"], index=None)
+        if produto:
+            produto_id = df.loc[df["descricao"] == produto, "id"].values[0]
+            quantidade = st.number_input("Quantidade", min_value=1.0, step=1.0)
+            fornecedor = st.text_input("Fornecedor (opcional)")
+            observacao = st.text_input("Observação")
+            if st.button("Salvar Entrada"):
+                lancar_entrada(produto_id, quantidade, fornecedor=fornecedor, observacao=observacao)
+                st.success("Entrada lançada com sucesso!")
 
 elif menu == "Lançar Saída":
     st.subheader("➖ Nova Saída")
-    df = consultar_estoque()
-    produto = st.selectbox("Produto", df["descricao"], index=None)
-    if produto:
-        produto_id = df.loc[df["descricao"] == produto, "id"].values[0]
-        quantidade = st.number_input("Quantidade", min_value=1.0, step=1.0)
-        destino = st.text_input("Destino")
-        observacao = st.text_input("Observação")
-        if st.button("Salvar Saída"):
-            lancar_saida(produto_id, quantidade, destino=destino, observacao=observacao)
-            st.success("Saída lançada com sucesso!")
+    df_full = consultar_estoque()  # todos os produtos
+    locais = df_full["local"].dropna().unique().tolist()
+    local_sel = st.selectbox("Local", locais, index=0 if locais else None)
+    if local_sel:
+        df = df_full[df_full["local"] == local_sel]
+        produto = st.selectbox("Produto", df["descricao"], index=None)
+        if produto:
+            produto_id = df.loc[df["descricao"] == produto, "id"].values[0]
+            quantidade = st.number_input("Quantidade", min_value=1.0, step=1.0)
+            destino = st.text_input("Destino")
+            observacao = st.text_input("Observação")
+            if st.button("Salvar Saída"):
+                lancar_saida(produto_id, quantidade, destino=destino, observacao=observacao)
+                st.success("Saída lançada com sucesso!")
 
 elif menu == "Relatórios":
     st.subheader("📑 Relatórios de Estoque")
